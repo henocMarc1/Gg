@@ -4,10 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Connexion / Inscription — SIMMO</title>
-  <!-- Ta feuille de style principale (garde le même thème) -->
   <link rel="stylesheet" href="styles.css">
   <style>
-    /* petits ajustements locaux si ton CSS principal n'a pas ces classes */
     .auth-wrapper {
       min-height: 100vh;
       display: flex;
@@ -128,11 +126,30 @@
     </section>
   </main>
 
-  <!-- Script : utilise les fonctions signIn/signUp exportées par auth.js -->
-  <script type="module">
-    import { signIn, signUp } from './auth.js';
-    import { auth } from './firebase-init.js';
-    import { onAuthStateChanged, sendPasswordResetEmail } from "https://www.gstatic.com/firebasejs/12.3.0/firebase-auth.js";
+  <!-- Firebase Compat -->
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyAn8qN6WNhQSByxJjppGNZXZ5B7_sG-MV4",
+      authDomain: "simmo-21084.firebaseapp.com",
+      databaseURL: "https://simmo-21084-default-rtdb.firebaseio.com",
+      projectId: "simmo-21084",
+      storageBucket: "simmo-21084.firebasestorage.app",
+      messagingSenderId: "260886429597",
+      appId: "1:260886429597:web:aeeb11ec2ad4715cf7b974",
+      measurementId: "G-SBENTVR4SZ"
+    };
+
+    // Initialiser Firebase seulement si pas déjà fait
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+
+    const auth = firebase.auth();
+    const db = firebase.database();
 
     // Elements
     const btnShowLogin = document.getElementById('btnShowLogin');
@@ -150,6 +167,7 @@
       loginMsg.textContent = '';
       signupMsg.textContent = '';
     }
+    
     function showSignup() {
       signupForm.classList.remove('hidden');
       loginForm.classList.add('hidden');
@@ -162,10 +180,9 @@
     btnShowSignup.addEventListener('click', (e) => { e.preventDefault(); showSignup(); });
 
     // Redirect immediately if already logged in
-    onAuthStateChanged(auth, (user) => {
+    auth.onAuthStateChanged((user) => {
       if (user) {
-        // redirige vers l'app principale
-        location.replace('index.html');
+        window.location.replace('index.html');
       }
     });
 
@@ -174,11 +191,16 @@
       e.preventDefault();
       loginMsg.textContent = '';
       loginLoader.classList.remove('hidden');
+      
       try {
         const email = document.getElementById('email').value.trim();
         const password = document.getElementById('password').value;
-        if (!email || !password) throw new Error('Email et mot de passe requis.');
-        await signIn({ email, password });
+        
+        if (!email || !password) {
+          throw new Error('Email et mot de passe requis.');
+        }
+        
+        await auth.signInWithEmailAndPassword(email, password);
         // onAuthStateChanged s'occupera de la redirection
       } catch (err) {
         loginMsg.textContent = 'Erreur : ' + (err.message || err);
@@ -191,14 +213,42 @@
     signupForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       signupMsg.textContent = '';
+      
       try {
         const email = document.getElementById('suEmail').value.trim();
         const password = document.getElementById('suPassword').value;
         const displayName = document.getElementById('displayName').value.trim();
-        if (!email || !password) throw new Error('Email et mot de passe requis.');
-        if (password.length < 6) throw new Error('Le mot de passe doit contenir au moins 6 caractères.');
-        await signUp({ email, password, displayName });
-        // utilisateur connecté automatiquement après l'inscription
+        
+        if (!email || !password) {
+          throw new Error('Email et mot de passe requis.');
+        }
+        
+        if (password.length < 6) {
+          throw new Error('Le mot de passe doit contenir au moins 6 caractères.');
+        }
+        
+        const cred = await auth.createUserWithEmailAndPassword(email, password);
+        const uid = cred.user.uid;
+        
+        // Ajouter displayName si fourni
+        if (displayName) {
+          await cred.user.updateProfile({ displayName });
+        }
+        
+        // Créer profil initial dans la Realtime DB
+        await db.ref(`users/${uid}/profile`).set({
+          email,
+          displayName: displayName || '',
+          createdAt: Date.now()
+        });
+        
+        // Initialiser données applicatives
+        await db.ref(`users/${uid}/appData`).set({
+          members: [],
+          lots: [],
+          payments: []
+        });
+        
         // onAuthStateChanged redirigera vers index.html
       } catch (err) {
         signupMsg.textContent = 'Erreur : ' + (err.message || err);
@@ -209,13 +259,16 @@
     forgotPasswordLink.addEventListener('click', async (e) => {
       e.preventDefault();
       const email = document.getElementById('email').value.trim();
+      
       if (!email) {
         loginMsg.textContent = 'Entrez votre email puis cliquez sur "Mot de passe oublié".';
         return;
       }
+      
       loginMsg.textContent = 'Envoi du lien...';
+      
       try {
-        await sendPasswordResetEmail(auth, email);
+        await auth.sendPasswordResetEmail(email);
         loginMsg.textContent = 'Lien de réinitialisation envoyé à ' + email;
       } catch (err) {
         loginMsg.textContent = 'Erreur : ' + (err.message || err);
